@@ -14,6 +14,7 @@ namespace Flight_Booking.Data
         public DbSet<Airport> Airports { get; set; }
         public DbSet<Plane> Planes { get; set; }
         public DbSet<AirlinePlane> AirlinePlanes { get; set; }
+        public DbSet<BookingTicket> BookingTickets { get; set; }
 
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -21,58 +22,172 @@ namespace Flight_Booking.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // Quan hệ cho Airline và Country
-            modelBuilder.Entity<Airline>()
-                .Property(a => a.CountryId)
-                .HasColumnName("country_id");
+            // Cấu hình bảng Users
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
 
+            // Cấu hình bảng Countries
             modelBuilder.Entity<Country>()
                 .Property(c => c.AdditionalCode)
                 .HasColumnName("additional_code");
 
-            // Quan hệ cho AirlinePlane
+            // Cấu hình bảng Airlines
+            modelBuilder.Entity<Airline>()
+                .Property(a => a.CountryId)
+                .HasColumnName("country_id");
+
+            modelBuilder.Entity<Airline>()
+                .HasOne(a => a.Country)
+                .WithMany()
+                .HasForeignKey(a => a.CountryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Cấu hình bảng Airports
+            modelBuilder.Entity<Airport>()
+                .Property(a => a.AdditionalCode)
+                .HasColumnName("additional_code");
+
+            // Cấu hình bảng Planes
+            modelBuilder.Entity<Plane>()
+                .Property(p => p.AdditionalCode)
+                .HasColumnName("additional_code");
+
+            // Cấu hình bảng AirlinePlanes
             modelBuilder.Entity<AirlinePlane>()
                 .HasKey(ap => new { ap.AirlineId, ap.PlaneId });
 
             modelBuilder.Entity<AirlinePlane>()
                 .HasOne(ap => ap.Airline)
                 .WithMany(a => a.AirlinePlanes)
-                .HasForeignKey(ap => ap.AirlineId);
+                .HasForeignKey(ap => ap.AirlineId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<AirlinePlane>()
                 .HasOne(ap => ap.Plane)
                 .WithMany(p => p.AirlinePlanes)
-                .HasForeignKey(ap => ap.PlaneId);
+                .HasForeignKey(ap => ap.PlaneId)
+                .OnDelete(DeleteBehavior.Cascade);
 
-            // Quan hệ cho Tickets
-            modelBuilder.Entity<Tickets>(entity =>
-            {
-                entity.ToTable("Tickets");
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.AirlineId).HasColumnName("airline_id");
-                entity.Property(e => e.DepartureAirportId).HasColumnName("departure_airport_id");
-                entity.Property(e => e.ArrivalAirportId).HasColumnName("arrival_airport_id");
-                entity.Property(e => e.PlaneId).HasColumnName("plane_id");
-                entity.Property(e => e.DepartureTime).HasColumnName("departure_time");
-                entity.Property(e => e.ArrivalTime).HasColumnName("arrival_time");
-                entity.Property(e => e.Stops).HasColumnName("stops");
-                entity.Property(e => e.Price).HasColumnName("price");
-                entity.Property(e => e.FlightClass).HasColumnName("flight_class");
-                entity.Property(e => e.AvailableSeats).HasColumnName("available_seats");
-            });
+            // Cấu hình bảng Tickets
+            modelBuilder.Entity<Tickets>()
+                .ToTable("tickets")
+                .HasKey(t => t.Id);
 
-            // Quan hệ cho Booking, Passenger, User, Tickets
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.Id).HasColumnName("id");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.AirlineId).HasColumnName("airline_id");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.DepartureAirportId).HasColumnName("departure_airport_id");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.ArrivalAirportId).HasColumnName("arrival_airport_id");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.PlaneId).HasColumnName("plane_id");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.DepartureTime).HasColumnName("departure_time");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.ArrivalTime).HasColumnName("arrival_time");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.Stops).HasColumnName("stops");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.Price).HasColumnName("price");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.FlightClass).HasColumnName("flight_class");
+            modelBuilder.Entity<Tickets>()
+                .Property(t => t.AvailableSeats).HasColumnName("available_seats");
+
+            modelBuilder.Entity<Tickets>()
+                .HasOne(t => t.Airline)
+                .WithMany()
+                .HasForeignKey(t => t.AirlineId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Tickets>()
+                .HasOne(t => t.DepartureAirport)
+                .WithMany()
+                .HasForeignKey(t => t.DepartureAirportId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Tickets>()
+                .HasOne(t => t.ArrivalAirport)
+                .WithMany()
+                .HasForeignKey(t => t.ArrivalAirportId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Tickets>()
+                .HasOne(t => t.Plane)
+                .WithMany()
+                .HasForeignKey(t => t.PlaneId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Cấu hình bảng Bookings
+            modelBuilder.Entity<Booking>()
+                .ToTable("Bookings")
+                .HasKey(b => b.BookingId);
+
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.BookingId).HasColumnName("BookingId");
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.UserId).HasColumnName("UserId");
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.BookingDate).HasColumnName("BookingDate");
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.Status).HasColumnName("Status");
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.TotalPrice).HasColumnName("TotalPrice");
+
             modelBuilder.Entity<Booking>()
                 .HasOne(b => b.User)
                 .WithMany()
                 .HasForeignKey(b => b.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<Booking>()
-                .HasOne(b => b.Ticket)
+            // Cấu hình bảng BookingTickets
+            modelBuilder.Entity<BookingTicket>()
+                .ToTable("BookingTickets")
+                .HasKey(bt => bt.BookingTicketId);
+
+            modelBuilder.Entity<BookingTicket>()
+                .Property(bt => bt.BookingTicketId).HasColumnName("BookingTicketId");
+            modelBuilder.Entity<BookingTicket>()
+                .Property(bt => bt.BookingId).HasColumnName("BookingId");
+            modelBuilder.Entity<BookingTicket>()
+                .Property(bt => bt.TicketId).HasColumnName("TicketId");
+
+            modelBuilder.Entity<BookingTicket>()
+                .HasOne(bt => bt.Booking)
+                .WithMany(b => b.BookingTickets)
+                .HasForeignKey(bt => bt.BookingId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BookingTicket>()
+                .HasOne(bt => bt.Ticket)
                 .WithMany()
-                .HasForeignKey(b => b.TicketId)
+                .HasForeignKey(bt => bt.TicketId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Cấu hình bảng Passengers
+            modelBuilder.Entity<Passenger>()
+                .ToTable("Passengers")
+                .HasKey(p => p.PassengerId);
+
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.PassengerId).HasColumnName("PassengerId");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.BookingId).HasColumnName("BookingId");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.Title).HasColumnName("title");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.FirstName).HasColumnName("first_name");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.LastName).HasColumnName("last_name");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.DateOfBirth).HasColumnName("DateOfBirth");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.PassportNumber).HasColumnName("passport_number");
+            modelBuilder.Entity<Passenger>()
+                .Property(p => p.PassportExpiry).HasColumnName("passport_expiry");
 
             modelBuilder.Entity<Passenger>()
                 .HasOne(p => p.Booking)
@@ -87,7 +202,7 @@ namespace Flight_Booking.Data
                     UserId = 1,
                     FullName = "Admin",
                     Email = "admin@example.com",
-                    Password = "482c811da5db4bc6d497fa98491e38", // Mật khẩu admin123 được mã hóa bằng MD5
+                    Password = HashPasswordMD5("admin123"), // Mật khẩu admin123 được mã hóa bằng MD5
                     Role = "admin"
                 }
             );

@@ -2,12 +2,13 @@
 {
     public class BookingDTO
     {
-        public int TicketId { get; set; } // ID của vé/chuyến bay
-        public decimal TotalPrice { get; set; }
-        public List<PassengerInfo> Passengers { get; set; }
+        public int? OutboundTicketId { get; set; } // ID của vé outbound (khứ hồi)
+        public int? ReturnTicketId { get; set; }   // ID của vé return (nếu có)
+        public float TotalPrice { get; set; }
+        public List<PassengerDTO> Passengers { get; set; }
     }
 
-    public class PassengerInfo
+    public class PassengerDTO
     {
         public string Title { get; set; }
         public string FirstName { get; set; }
