@@ -1,12 +1,16 @@
-﻿namespace Flight_Booking.DTO
+﻿namespace Flight_Booking.Model
 {
-    public class TicketDTO
+    public class FlightSchedule
     {
         public int Id { get; set; }
         public int AirlineId { get; set; }
+        public Airline Airline { get; set; }
         public int DepartureAirportId { get; set; }
+        public Airport DepartureAirport { get; set; }
         public int ArrivalAirportId { get; set; }
-        public int PlaneId { get; set; }
+        public Airport ArrivalAirport { get; set; }
+        public int AircraftId { get; set; }
+        public Aircraft Aircraft { get; set; }
         public DateTime? DepartureTime { get; set; }
         public DateTime? ArrivalTime { get; set; }
         public int Stops { get; set; }

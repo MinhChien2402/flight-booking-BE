@@ -2,7 +2,7 @@
 
 namespace Flight_Booking.Model
 {
-    [Table("countries")]
+    [Table("Country")]
     public class Country
     {
         public int Id { get; set; }

@@ -9,11 +9,11 @@
     {
         [Route("api/[controller]")]
         [ApiController]
-        public class AirportsController : ControllerBase
+        public class AirportController : ControllerBase
         {
             private readonly AppDbContext _context;
 
-            public AirportsController(AppDbContext context)
+            public AirportController(AppDbContext context)
             {
                 _context = context;
             }

@@ -9,17 +9,18 @@ using System.Security.Cryptography;
 using Flight_Booking.Model;
 using static Flight_Booking.DTO.AuthDTO;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 
 namespace Flight_Booking.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController : ControllerBase
+    public class AuthenticationController : ControllerBase
     {
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
 
-        public AuthController(AppDbContext context, IConfiguration configuration)
+        public AuthenticationController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
             _configuration = configuration;
@@ -28,12 +29,14 @@ namespace Flight_Booking.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            if (string.IsNullOrEmpty(request.FullName) || string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
+            if (string.IsNullOrEmpty(request.FullName) || string.IsNullOrEmpty(request.Email) ||
+                string.IsNullOrEmpty(request.Password) || string.IsNullOrEmpty(request.Address) ||
+                string.IsNullOrEmpty(request.PhoneNumber) || string.IsNullOrEmpty(request.PreferredCreditCard))
             {
-                return BadRequest(new { message = "All fields are required" });
+                return BadRequest(new { message = "All fields are required." });
             }
 
-            var existingUser = _context.Users.FirstOrDefault(u => u.Email == request.Email);
+            var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
             if (existingUser != null)
             {
                 return BadRequest(new { message = "User already exists" });
@@ -45,8 +48,13 @@ namespace Flight_Booking.Controllers
                 FullName = request.FullName,
                 Email = request.Email,
                 Password = hashedPassword,
-                Role = request.Role ?? "customer", // Sử dụng Role từ request, mặc định là customer
-                PhoneNumber = request.PhoneNumber ?? "N/A"
+                Role = request.Role ?? "customer",
+                PhoneNumber = request.PhoneNumber,
+                Address = request.Address,
+                PreferredCreditCard = request.PreferredCreditCard,
+                Sex = request.Sex,
+                Age = request.Age,
+                SkyMiles = 0 // Mặc định khi đăng ký
             };
 
             _context.Users.Add(user);
@@ -63,25 +71,29 @@ namespace Flight_Booking.Controllers
                 return BadRequest(new { message = "Email and password are required" });
             }
 
-            var user = _context.Users
-                .FirstOrDefault(u => u.Email == request.Email);
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == request.Email);
             if (user == null)
             {
                 return BadRequest(new { message = "Invalid email or password" });
             }
 
-            // Kiểm tra Password
             if (string.IsNullOrEmpty(user.Password) || HashPasswordMD5(request.Password) != user.Password)
             {
                 return BadRequest(new { message = "Invalid email or password" });
             }
 
-            // Đảm bảo các trường không NULL khi tạo UserDTO
             var userDto = new UserDTO
             {
-                FullName = user.FullName ?? string.Empty, // Xử lý NULL
-                Email = user.Email ?? string.Empty,     // Xử lý NULL
-                Role = user.Role ?? string.Empty        // Xử lý NULL
+                FullName = user.FullName ?? string.Empty,
+                Email = user.Email ?? string.Empty,
+                Role = user.Role ?? string.Empty,
+                PhoneNumber = user.PhoneNumber ?? string.Empty,
+                Address = user.Address ?? string.Empty,
+                Sex = user.Sex ?? string.Empty,
+                Age = user.Age,
+                PreferredCreditCard = user.PreferredCreditCard ?? string.Empty,
+                SkyMiles = user.SkyMiles
             };
 
             var token = GenerateJwtToken(user);
@@ -98,7 +110,7 @@ namespace Flight_Booking.Controllers
         {
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // Sử dụng Id thay vì UserId
                 new Claim(ClaimTypes.Role, user.Role),
                 new Claim(ClaimTypes.Email, user.Email)
             };
@@ -125,7 +137,7 @@ namespace Flight_Booking.Controllers
                 var sb = new StringBuilder();
                 foreach (var b in hashBytes)
                 {
-                    sb.Append(b.ToString("x2")); // Chuyển thành chuỗi hex
+                    sb.Append(b.ToString("x2"));
                 }
                 return sb.ToString();
             }

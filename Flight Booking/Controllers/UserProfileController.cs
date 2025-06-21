@@ -10,11 +10,11 @@ namespace Flight_Booking.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ProfileController : ControllerBase
+    public class UserProfileController : ControllerBase
     {
         private readonly AppDbContext _context;
 
-        public ProfileController(AppDbContext context)
+        public UserProfileController(AppDbContext context)
         {
             _context = context;
         }
@@ -23,8 +23,8 @@ namespace Flight_Booking.Controllers
         [HttpGet]
         public async Task<IActionResult> GetProfile()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            if (userId == 0)
             {
                 return Unauthorized(new { message = "Invalid token" });
             }
@@ -40,7 +40,12 @@ namespace Flight_Booking.Controllers
                 fullName = user.FullName ?? string.Empty,
                 email = user.Email ?? string.Empty,
                 phoneNumber = user.PhoneNumber ?? string.Empty,
-                dateOfBirth = user.DateOfBirth?.ToString("yyyy-MM-dd") ?? string.Empty
+                dateOfBirth = user.DateOfBirth?.ToString("yyyy-MM-dd") ?? string.Empty,
+                address = user.Address ?? string.Empty,
+                sex = user.Sex ?? string.Empty,
+                age = user.Age,
+                preferredCreditCard = user.PreferredCreditCard ?? string.Empty,
+                skyMiles = user.SkyMiles
             };
 
             return Ok(userDto);
@@ -50,8 +55,8 @@ namespace Flight_Booking.Controllers
         [HttpPut]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateUserRequest request)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            if (userId == 0)
             {
                 return Unauthorized(new { message = "Invalid token" });
             }
@@ -67,15 +72,19 @@ namespace Flight_Booking.Controllers
                 return NotFound(new { message = "User not found" });
             }
 
-            if (userId != user.UserId)
+            if (userId != user.Id)
             {
-                return Forbid("You are not authorized to update this user");
+                return StatusCode(403, new { message = "You are not authorized to update this user" }); // Thay Forbid
             }
 
             user.FullName = request.FullName;
             user.Email = request.Email;
             user.PhoneNumber = request.PhoneNumber;
             user.DateOfBirth = request.DateOfBirth;
+            user.Address = request.Address;
+            user.Sex = request.Sex;
+            user.Age = request.Age;
+            user.PreferredCreditCard = request.PreferredCreditCard;
 
             await _context.SaveChangesAsync();
 

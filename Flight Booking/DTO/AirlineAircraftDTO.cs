@@ -1,8 +1,8 @@
 ﻿namespace Flight_Booking.DTO
 {
-    public class AirlinePlaneDTO
+    public class AirlineAircraftDTO
     {
         public int AirlineId { get; set; }
-        public int PlaneId { get; set; }
+        public int AircraftId { get; set; }
     }
 }

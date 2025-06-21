@@ -16,7 +16,6 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Flight Booking API", Version = "v1" });
 
-    // Thêm hỗ trợ Bearer token cho Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
@@ -42,12 +41,12 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// ➕ Add DbContext configuration
+// Add DbContext configuration
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
 );
 
-// ✅ Add CORS policy to allow frontend to call the API
+// Add CORS policy
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -55,11 +54,12 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins("http://localhost:3000")
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
-// ➕ Add JWT Authentication
+// Add JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
@@ -92,12 +92,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Serve static files (for resources like /airplane-wing.jpg)
+app.UseStaticFiles();
 
-// ✅ Enable CORS before controllers
+// Enable CORS
 app.UseCors("AllowFrontend");
 
-// ➕ Enable Authentication before Authorization
+// Enable Authentication and Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 

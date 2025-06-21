@@ -7,6 +7,6 @@
         public int CountryId { get; set; } // Chỉ cần CountryId
         public string Callsign { get; set; }
         public string Status { get; set; }
-        public List<AirlinePlaneDTO> AirlinePlanes { get; set; }
+        public List<AirlineAircraftDTO> AirlinePlanes { get; set; }
     }
 }

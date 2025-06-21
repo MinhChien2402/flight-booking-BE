@@ -2,16 +2,15 @@
 
 namespace Flight_Booking.Model
 {
-    public class Plane
+    [Table("Aircraft")]
+    public class Aircraft
     {
         public int Id { get; set; }
         public string Name { get; set; }
         public string Code { get; set; }
-
         [Column("additional_code")]
         public string AdditionalCode { get; set; }
 
-        // Thêm thuộc tính này để phản ánh mối quan hệ nhiều-nhiều với AirlinePlane
-        public ICollection<AirlinePlane> AirlinePlanes { get; set; }
+        public ICollection<AirlineAircraft> AirlineAircrafts { get; set; } // Đổi từ AirlinePlanes thành AirlineAircrafts
     }
 }
