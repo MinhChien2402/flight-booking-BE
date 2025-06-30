@@ -1,18 +1,23 @@
-﻿namespace Flight_Booking.DTO
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace Flight_Booking.DTO
 {
     public class AuthDTO
     {
         public class RegisterRequest
         {
+            [Required]
             public string FullName { get; set; }
+            [Required]
             public string Email { get; set; }
+            [Required]
             public string Password { get; set; }
-            public string PhoneNumber { get; set; }
+            public string? PhoneNumber { get; set; }
             public string Role { get; set; }
-            public string Address { get; set; }
-            public string Sex { get; set; }
+            public string? Address { get; set; }
+            public string? Sex { get; set; }
             public int? Age { get; set; }
-            public string PreferredCreditCard { get; set; }
+            public string? PreferredCreditCard { get; set; }
         }
 
         public class LoginRequest

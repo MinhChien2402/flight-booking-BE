@@ -1,4 +1,5 @@
-﻿using Flight_Booking.Data;
+﻿// src/Controllers/AuthenticationController.cs
+using Flight_Booking.Data;
 using Flight_Booking.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -29,11 +30,22 @@ namespace Flight_Booking.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            if (string.IsNullOrEmpty(request.FullName) || string.IsNullOrEmpty(request.Email) ||
-                string.IsNullOrEmpty(request.Password) || string.IsNullOrEmpty(request.Address) ||
-                string.IsNullOrEmpty(request.PhoneNumber) || string.IsNullOrEmpty(request.PreferredCreditCard))
+            // Kiểm tra ModelState
+            if (!ModelState.IsValid)
             {
-                return BadRequest(new { message = "All fields are required." });
+                var errors = ModelState
+                    .Where(x => x.Value?.Errors.Count > 0)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => x.Value?.Errors.Select(e => e.ErrorMessage).ToArray()
+                    );
+                return BadRequest(new { message = "Validation errors", errors });
+            }
+
+            // Chỉ kiểm tra các trường bắt buộc
+            if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
+            {
+                return BadRequest(new { message = "Email and Password are required." });
             }
 
             var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
@@ -45,15 +57,15 @@ namespace Flight_Booking.Controllers
             var hashedPassword = HashPasswordMD5(request.Password);
             var user = new User
             {
-                FullName = request.FullName,
+                FullName = string.IsNullOrEmpty(request.FullName) ? null : request.FullName,
                 Email = request.Email,
                 Password = hashedPassword,
                 Role = request.Role ?? "customer",
-                PhoneNumber = request.PhoneNumber,
-                Address = request.Address,
-                PreferredCreditCard = request.PreferredCreditCard,
-                Sex = request.Sex,
-                Age = request.Age,
+                PhoneNumber = string.IsNullOrEmpty(request.PhoneNumber) ? null : request.PhoneNumber,
+                Address = string.IsNullOrEmpty(request.Address) ? null : request.Address,
+                PreferredCreditCard = string.IsNullOrEmpty(request.PreferredCreditCard) ? null : request.PreferredCreditCard,
+                Sex = string.IsNullOrEmpty(request.Sex) ? null : request.Sex,
+                Age = request.Age ?? 0,
                 SkyMiles = 0 // Mặc định khi đăng ký
             };
 

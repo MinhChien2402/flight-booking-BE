@@ -10,7 +10,7 @@ namespace Flight_Booking.Data
         public DbSet<Passenger> Passengers { get; set; }
         public DbSet<FlightSchedule> FlightSchedules { get; set; }
         public DbSet<Country> Countries { get; set; }
-        public DbSet<Airline> Airlines { get; set; }
+        public DbSet<Airline> Airline { get; set; }
         public DbSet<Airport> Airports { get; set; }
         public DbSet<Aircraft> Aircrafts { get; set; }
         public DbSet<AirlineAircraft> AirlinePlanes { get; set; }

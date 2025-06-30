@@ -46,7 +46,7 @@ namespace Flight_Booking.Controllers
                 return BadRequest(new { message = "AirlineId and AircraftId are required." });
             }
 
-            var airline = await _context.Airlines.FindAsync(airlineAircraft.AirlineId);
+            var airline = await _context.Airline.FindAsync(airlineAircraft.AirlineId);
             var aircraft = await _context.Aircrafts.FindAsync(airlineAircraft.AircraftId);
             if (airline == null || aircraft == null)
             {

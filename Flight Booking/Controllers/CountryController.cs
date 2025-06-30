@@ -114,7 +114,7 @@ namespace Flight_Booking.Controllers
                     return NotFound();
                 }
 
-                var hasRelatedAirlines = await _context.Airlines.AnyAsync(a => a.CountryId == id);
+                var hasRelatedAirlines = await _context.Airline.AnyAsync(a => a.CountryId == id);
                 if (hasRelatedAirlines)
                 {
                     return BadRequest("It is impossible to delete the country due to the airline associated with this country.");

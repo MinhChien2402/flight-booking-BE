@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,7 +60,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add JWT Authentication
+// Add JWT Authentication with error handling
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
@@ -81,6 +82,21 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+    // Xử lý lỗi JWT chi tiết hơn
+    options.Events = new JwtBearerEvents
+    {
+        OnAuthenticationFailed = context =>
+        {
+            Console.WriteLine($"JWT Authentication failed: {context.Exception.Message}");
+            return Task.CompletedTask;
+        },
+        OnChallenge = context =>
+        {
+            Console.WriteLine("JWT Challenge triggered: No token or invalid token");
+            context.HandleResponse(); // Ngăn chặn redirect mặc định
+            return Task.CompletedTask;
+        }
+    };
 });
 
 var app = builder.Build();
@@ -92,15 +108,34 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Serve static files (for resources like /airplane-wing.jpg)
+// Serve static files
 app.UseStaticFiles();
 
-// Enable CORS
+// Enable CORS trước Authentication
 app.UseCors("AllowFrontend");
 
-// Enable Authentication and Authorization
+// Enable Authentication và Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Thêm middleware xử lý lỗi toàn cục
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var exceptionHandlerPathFeature = context.Features.Get<IExceptionHandlerPathFeature>();
+        if (exceptionHandlerPathFeature?.Error != null)
+        {
+            Console.WriteLine($"Global Error at {DateTime.Now}: {exceptionHandlerPathFeature.Error}");
+            await context.Response.WriteAsJsonAsync(new
+            {
+                message = "Internal Server Error",
+                error = exceptionHandlerPathFeature.Error.Message,
+                stackTrace = exceptionHandlerPathFeature.Error.StackTrace
+            });
+        }
+    });
+});
 
 app.MapControllers();
 

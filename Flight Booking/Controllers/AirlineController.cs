@@ -23,7 +23,7 @@ namespace Flight_Booking.Controllers
         {
             try
             {
-                var airlines = await _context.Airlines
+                var airlines = await _context.Airline
                     .Include(a => a.Country)
                     .Where(a => a.CountryId.HasValue) // Lọc các bản ghi có CountryId không NULL
                     .ToListAsync();
@@ -41,7 +41,7 @@ namespace Flight_Booking.Controllers
         {
             try
             {
-                var airline = await _context.Airlines
+                var airline = await _context.Airline
                     .Include(a => a.Country)
                     .FirstOrDefaultAsync(a => a.Id == id);
                 if (airline == null || !airline.CountryId.HasValue)
@@ -74,10 +74,10 @@ namespace Flight_Booking.Controllers
                 }).ToList() ?? new List<AirlineAircraft>()
             };
 
-            _context.Airlines.Add(airline);
+            _context.Airline.Add(airline);
             await _context.SaveChangesAsync();
 
-            var createdAirline = await _context.Airlines
+            var createdAirline = await _context.Airline
                 .Include(a => a.Country)
                 .FirstOrDefaultAsync(a => a.Id == airline.Id);
 
@@ -89,7 +89,7 @@ namespace Flight_Booking.Controllers
         {
             if (id != airlineDto.Id) return BadRequest();
 
-            var airline = await _context.Airlines.Include(a => a.AirlinePlanes).FirstOrDefaultAsync(a => a.Id == id);
+            var airline = await _context.Airline.Include(a => a.AirlinePlanes).FirstOrDefaultAsync(a => a.Id == id);
             if (airline == null) return NotFound();
 
             var country = await _context.Countries.FindAsync(airlineDto.CountryId);
@@ -117,7 +117,7 @@ namespace Flight_Booking.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAirline(int id)
         {
-            var airline = await _context.Airlines.FindAsync(id);
+            var airline = await _context.Airline.FindAsync(id);
             if (airline == null) return NotFound();
 
             var relatedAirlinePlanes = await _context.AirlinePlanes
@@ -128,7 +128,7 @@ namespace Flight_Booking.Controllers
                 _context.AirlinePlanes.RemoveRange(relatedAirlinePlanes);
             }
 
-            _context.Airlines.Remove(airline);
+            _context.Airline.Remove(airline);
             await _context.SaveChangesAsync();
 
             return NoContent();
