@@ -13,8 +13,8 @@ namespace Flight_Booking.Model
         public string ReservationStatus { get; set; }
         public decimal TotalFare { get; set; }
         public DateTime? BlockExpiryDate { get; set; }
-        public string ConfirmationNumber { get; set; }
-        public string CancellationRules { get; set; }
+        public string ConfirmationNumber { get; set; } 
+        public string CancellationRules { get; set; } = "Default rules";
         public int? FlightScheduleId { get; set; } // Thêm thuộc tính mới
         [ForeignKey("FlightScheduleId")]
         public FlightSchedule FlightSchedule { get; set; } // Thêm navigation property

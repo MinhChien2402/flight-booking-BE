@@ -19,5 +19,6 @@
         public int AvailableSeats { get; set; }
         public DateTime? LastUpdate { get; set; }
         public decimal? DynamicPrice { get; set; }
+        public double? Distance { get; set; }
     }
 }

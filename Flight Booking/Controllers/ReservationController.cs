@@ -399,21 +399,70 @@ namespace Flight_Booking.Controllers
         [HttpPost("block")]
         public async Task<IActionResult> BlockReservation([FromBody] BlockTicketDTO dto)
         {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-            var flightSchedule = await _context.FlightSchedules.FindAsync(dto.FlightScheduleId);
-            if (flightSchedule == null || flightSchedule.AvailableSeats < 1 || !flightSchedule.DepartureTime.HasValue)
-                return BadRequest(new { message = "Flight schedule not available" });
-
-            var reservation = new Reservation
+            try
             {
-                UserId = userId,
-                FlightScheduleId = dto.FlightScheduleId,
-                BlockExpiryDate = DateTime.Now.AddDays(14),
-                ReservationStatus = "Blocked"
-            };
-            _context.Reservations.Add(reservation);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Reservation blocked", reservationId = reservation.Id });
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var flightSchedule = await _context.FlightSchedules
+                    .Include(fs => fs.DepartureAirport)
+                    .Include(fs => fs.ArrivalAirport)
+                    .FirstOrDefaultAsync(fs => fs.Id == dto.FlightScheduleId);
+
+                if (flightSchedule == null || flightSchedule.AvailableSeats < 1 || !flightSchedule.DepartureTime.HasValue)
+                    return BadRequest(new { message = "Flight schedule not available" });
+
+                var daysDiff = (flightSchedule.DepartureTime.Value - DateTime.Now).TotalDays;
+                if (daysDiff < 14)
+                    return BadRequest(new { message = "Cannot block ticket, departure is within 2 weeks. Please buy instead." });
+
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                    return BadRequest(new { message = "User not found" });
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    var reservation = new Reservation
+                    {
+                        UserId = userId,
+                        FlightScheduleId = dto.FlightScheduleId,
+                        BlockExpiryDate = DateTime.Now.AddDays(14),
+                        ReservationStatus = "Blocked",
+                        TotalFare = flightSchedule.Price,
+                        ConfirmationNumber = Guid.NewGuid().ToString(),
+                        CancellationRules = "Default: 90% refund if cancelled > 7 days, 50% if < 7 days",
+                        ReservationDate = DateTime.Now
+                    };
+
+                    var distance = flightSchedule.Distance ?? 1000;
+                    user.SkyMiles += (decimal)(distance * 0.1);
+
+                    _context.Reservations.Add(reservation);
+                    await _context.SaveChangesAsync();
+
+                    // Thêm ReservationTicket
+                    var reservationTicket = new ReservationTicket
+                    {
+                        ReservationId = reservation.Id,
+                        FlightScheduleId = dto.FlightScheduleId
+                    };
+                    _context.ReservationTickets.Add(reservationTicket);
+                    flightSchedule.AvailableSeats -= 1;
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new { message = "Reservation blocked", reservationId = reservation.Id, confirmationNumber = reservation.ConfirmationNumber });
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                Console.WriteLine($"DbUpdateException: {ex.InnerException?.Message ?? ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.InnerException?.Message ?? ex.Message });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"General error: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
         }
 
         [Authorize]
