@@ -1,5 +1,4 @@
-﻿// src/Controllers/AuthenticationController.cs
-using Flight_Booking.Data;
+﻿using Flight_Booking.Data;
 using Flight_Booking.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -30,7 +29,6 @@ namespace Flight_Booking.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            // Kiểm tra ModelState
             if (!ModelState.IsValid)
             {
                 var errors = ModelState
@@ -42,7 +40,6 @@ namespace Flight_Booking.Controllers
                 return BadRequest(new { message = "Validation errors", errors });
             }
 
-            // Chỉ kiểm tra các trường bắt buộc
             if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
             {
                 return BadRequest(new { message = "Email and Password are required." });
@@ -66,7 +63,7 @@ namespace Flight_Booking.Controllers
                 PreferredCreditCard = string.IsNullOrEmpty(request.PreferredCreditCard) ? null : request.PreferredCreditCard,
                 Sex = string.IsNullOrEmpty(request.Sex) ? null : request.Sex,
                 Age = request.Age ?? 0,
-                SkyMiles = 0 // Mặc định khi đăng ký
+                SkyMiles = 0
             };
 
             _context.Users.Add(user);
@@ -109,6 +106,8 @@ namespace Flight_Booking.Controllers
             };
 
             var token = GenerateJwtToken(user);
+            Console.WriteLine($"Configuration at {DateTime.Now}: Key={_configuration["Jwt:Key"]}, Issuer={_configuration["Jwt:Issuer"]}, Audience={_configuration["Jwt:Audience"]}");
+            Console.WriteLine($"Generated Token at {DateTime.Now}: {token}"); // Log token
 
             return Ok(new AuthResponse
             {
@@ -122,9 +121,9 @@ namespace Flight_Booking.Controllers
         {
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // Sử dụng Id thay vì UserId
-                new Claim(ClaimTypes.Role, user.Role),
-                new Claim(ClaimTypes.Email, user.Email)
+                new Claim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier", user.Id.ToString()), // Chuyển đổi sang string
+                new Claim("http://schemas.microsoft.com/ws/2008/06/identity/claims/role", user.Role ?? "customer"),
+                new Claim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress", user.Email ?? string.Empty)
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));

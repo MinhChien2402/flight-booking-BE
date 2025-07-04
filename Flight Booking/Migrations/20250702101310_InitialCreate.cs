@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Flight_Booking.Migrations
 {
     /// <inheritdoc />
-    public partial class CreateRouteSuggestionsTable : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -170,8 +170,9 @@ namespace Flight_Booking.Migrations
                     price = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     flight_class = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     available_seats = table.Column<int>(type: "int", nullable: false),
-                    LastUpdate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    DynamicPrice = table.Column<decimal>(type: "decimal(18,2)", nullable: true)
+                    LastUpdate = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DynamicPrice = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    Distance = table.Column<double>(type: "float", nullable: true)
                 },
                 constraints: table =>
                 {

@@ -16,30 +16,25 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Flight Booking API", Version = "v1" });
-
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
         Description = "Please enter JWT with Bearer into field (e.g., 'Bearer {token}')",
         Name = "Authorization",
         Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
+        Scheme = "Bearer",
+        BearerFormat = "JWT"
     });
-
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
+  {
     {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
+      new OpenApiSecurityScheme
+      {
+        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+      },
+      Array.Empty<string>()
+    }
+  });
 });
 
 // Add DbContext configuration
@@ -82,7 +77,6 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
-    // Xử lý lỗi JWT chi tiết hơn
     options.Events = new JwtBearerEvents
     {
         OnAuthenticationFailed = context =>
@@ -93,7 +87,7 @@ builder.Services.AddAuthentication(options =>
         OnChallenge = context =>
         {
             Console.WriteLine("JWT Challenge triggered: No token or invalid token");
-            context.HandleResponse(); // Ngăn chặn redirect mặc định
+            context.HandleResponse();
             return Task.CompletedTask;
         }
     };

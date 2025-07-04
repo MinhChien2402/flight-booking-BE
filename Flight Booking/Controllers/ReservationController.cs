@@ -1,21 +1,24 @@
 ﻿using Flight_Booking.Data;
 using Flight_Booking.DTO;
 using Flight_Booking.Model;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Security.Claims;
+using iText.IO.Font.Constants;
+using iText.Kernel.Colors;
+using iText.Kernel.Font;
+using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
-using iText.Kernel.Colors;
-using iText.Kernel.Geom;
-using iText.Kernel.Font;
-using iText.IO.Font.Constants;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using System;
+using System.Globalization;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace Flight_Booking.Controllers
 {
@@ -143,20 +146,38 @@ namespace Flight_Booking.Controllers
             }
         }
 
-        [Authorize]
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [HttpGet("user")]
         public async Task<IActionResult> GetUserReservations()
         {
             try
             {
-                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-                if (userId == 0)
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Console.WriteLine($"Raw UserId claim from token: {userIdClaim}");
+
+                if (string.IsNullOrEmpty(userIdClaim))
                 {
-                    return Unauthorized(new { message = "Invalid token" });
+                    Console.WriteLine("No valid UserId found in token");
+                    return Unauthorized(new { message = "No valid UserId in token" });
                 }
 
+                if (!int.TryParse(userIdClaim, out int userId))
+                {
+                    Console.WriteLine($"Invalid UserId format: {userIdClaim}, attempting to use as is");
+                    if (int.TryParse(userIdClaim, NumberStyles.Integer, CultureInfo.InvariantCulture, out userId))
+                    {
+                        Console.WriteLine($"Parsed UserId: {userId}");
+                    }
+                    else
+                    {
+                        return Unauthorized(new { message = "Invalid UserId format in token" });
+                    }
+                }
+
+                Console.WriteLine($"Extracted UserId from token: {userId}");
+
                 var reservations = await _context.Reservations
-                    .Where(r => r.UserId == userId && r.ReservationStatus == "Confirmed")
+                    .Where(r => r.UserId == userId && (r.ReservationStatus == "Confirmed" || r.ReservationStatus == "Blocked"))
                     .Include(r => r.ReservationTickets)
                         .ThenInclude(rt => rt.FlightSchedule)
                         .ThenInclude(fs => fs.Airline)
@@ -166,40 +187,40 @@ namespace Flight_Booking.Controllers
                     .Include(r => r.ReservationTickets)
                         .ThenInclude(rt => rt.FlightSchedule)
                         .ThenInclude(fs => fs.ArrivalAirport)
-                    .AsSplitQuery()
-                    .Select(r => new
-                    {
-                        reservationId = r.Id,
-                        tickets = r.ReservationTickets
-                            .Where(rt => rt.FlightSchedule != null)
-                            .Select(rt => new
-                            {
-                                airline = rt.FlightSchedule.Airline,
-                                departureAirport = rt.FlightSchedule.DepartureAirport,
-                                arrivalAirport = rt.FlightSchedule.ArrivalAirport,
-                                departureTime = rt.FlightSchedule.DepartureTime,
-                                arrivalTime = rt.FlightSchedule.ArrivalTime,
-                                availableSeats = rt.FlightSchedule.AvailableSeats,
-                                flightClass = rt.FlightSchedule.FlightClass,
-                                id = rt.FlightSchedule.Id,
-                                aircraft = rt.FlightSchedule.Aircraft,
-                                price = rt.FlightSchedule.Price
-                            })
-                            .ToList(),
-                        bookedOn = r.ReservationDate.ToString("dd/MM/yyyy HH:mm"),
-                        totalPrice = r.TotalFare,
-                        status = r.ReservationStatus,
-                        confirmationNumber = r.ConfirmationNumber
-                    })
                     .ToListAsync();
 
-                if (reservations.Any(r => !r.tickets.Any()))
-                {
-                    Console.WriteLine($"Warning: Some reservations have empty tickets for user {userId}");
-                }
-                Console.WriteLine("Retrieved Reservations: " + Newtonsoft.Json.JsonConvert.SerializeObject(reservations));
+                Console.WriteLine($"Total reservations found: {reservations.Count}");
 
-                return Ok(reservations);
+                var result = reservations.Select(r => new
+                {
+                    reservationId = r.Id,
+                    tickets = r.ReservationTickets
+                        .Where(rt => rt.FlightSchedule != null)
+                        .Select(rt => new
+                        {
+                            airline = rt.FlightSchedule.Airline != null ? new { Name = rt.FlightSchedule.Airline.Name } : null,
+                            departureAirport = rt.FlightSchedule.DepartureAirport != null ? new { Name = rt.FlightSchedule.DepartureAirport.Name } : null,
+                            arrivalAirport = rt.FlightSchedule.ArrivalAirport != null ? new { Name = rt.FlightSchedule.ArrivalAirport.Name } : null,
+                            departureTime = rt.FlightSchedule.DepartureTime.HasValue ? rt.FlightSchedule.DepartureTime.Value.ToString("dd/MM/yyyy HH:mm") : null,
+                            arrivalTime = rt.FlightSchedule.ArrivalTime.HasValue ? rt.FlightSchedule.ArrivalTime.Value.ToString("dd/MM/yyyy HH:mm") : null,
+                            id = rt.FlightSchedule.Id,
+                            price = rt.FlightSchedule.Price
+                        })
+                        .ToList(),
+                    bookedOn = r.ReservationDate.ToString("dd/MM/yyyy HH:mm"),
+                    totalPrice = r.TotalFare,
+                    status = r.ReservationStatus,
+                    confirmationNumber = r.ConfirmationNumber
+                }).ToList();
+
+                Console.WriteLine($"Serialized result: {Newtonsoft.Json.JsonConvert.SerializeObject(result)}");
+
+                if (!result.Any())
+                {
+                    return NotFound(new { message = $"No reservations found for UserId: {userId}" });
+                }
+
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -221,7 +242,7 @@ namespace Flight_Booking.Controllers
                 }
 
                 var reservation = await _context.Reservations
-                    .Where(r => r.Id == reservationId && r.UserId == userId && r.ReservationStatus == "Confirmed")
+                    .Where(r => r.Id == reservationId && r.UserId == userId && (r.ReservationStatus == "Confirmed" || r.ReservationStatus == "Blocked"))
                     .Include(r => r.ReservationTickets)
                         .ThenInclude(rt => rt.FlightSchedule)
                         .ThenInclude(fs => fs.Airline)

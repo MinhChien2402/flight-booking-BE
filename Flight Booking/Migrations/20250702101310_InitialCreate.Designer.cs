@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Flight_Booking.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250619103106_CreateRouteSuggestionsTable")]
-    partial class CreateRouteSuggestionsTable
+    [Migration("20250702101310_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -237,6 +237,9 @@ namespace Flight_Booking.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("departure_time");
 
+                    b.Property<double?>("Distance")
+                        .HasColumnType("float");
+
                     b.Property<decimal?>("DynamicPrice")
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("DynamicPrice");
@@ -246,7 +249,7 @@ namespace Flight_Booking.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("flight_class");
 
-                    b.Property<DateTime>("LastUpdate")
+                    b.Property<DateTime?>("LastUpdate")
                         .HasColumnType("datetime2")
                         .HasColumnName("LastUpdate");
 
