@@ -490,14 +490,54 @@ namespace Flight_Booking.Controllers
         [HttpPost("confirm/{reservationId}")]
         public async Task<IActionResult> ConfirmReservation(int reservationId)
         {
-            var reservation = await _context.Reservations.FindAsync(reservationId);
-            if (reservation == null || reservation.ReservationStatus != "Blocked")
-                return BadRequest(new { message = "Invalid reservation" });
+            try
+            {
+                // Lấy userId từ token
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
 
-            reservation.ReservationStatus = "Confirmed";
-            reservation.ConfirmationNumber = Guid.NewGuid().ToString();
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Reservation confirmed", confirmationNumber = reservation.ConfirmationNumber });
+                // Tìm reservation với reservationId và userId
+                var reservation = await _context.Reservations
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                    .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId);
+
+                // Kiểm tra reservation hợp lệ và trạng thái
+                if (reservation == null || reservation.ReservationStatus != "Blocked")
+                    return BadRequest(new { message = "Invalid or non-blocked reservation" });
+
+                // Kiểm tra flight schedule
+                var flightSchedule = reservation.ReservationTickets.FirstOrDefault()?.FlightSchedule;
+                if (flightSchedule == null || !flightSchedule.DepartureTime.HasValue)
+                    return BadRequest(new { message = "Invalid flight schedule" });
+
+                // Kiểm tra thời hạn xác nhận (trước 2 tuần)
+                var daysDiff = (flightSchedule.DepartureTime.Value - DateTime.Now).TotalDays;
+                if (daysDiff < 14)
+                    return BadRequest(new { message = "Cannot confirm: Departure is within 2 weeks" });
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    // Cập nhật trạng thái và số xác nhận
+                    reservation.ReservationStatus = "Confirmed";
+                    reservation.ConfirmationNumber = Guid.NewGuid().ToString();
+                    reservation.BlockExpiryDate = null; // Xóa thời hạn giữ chỗ
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new
+                    {
+                        message = "Reservation confirmed successfully",
+                        reservationId = reservation.Id,
+                        confirmationNumber = reservation.ConfirmationNumber
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in ConfirmReservation: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
         }
 
         [Authorize]
@@ -549,6 +589,53 @@ namespace Flight_Booking.Controllers
             _context.ReservationHistories.Add(history);
             await _context.SaveChangesAsync();
             return Ok(new { message = "Reservation cancelled", refund = history.RefundAmount });
+        }
+
+        [Authorize]
+        [HttpPost("cancel-expired")]
+        public async Task<IActionResult> CancelExpiredReservations()
+        {
+            try
+            {
+                var currentDate = DateTime.Now;
+
+                var expiredReservations = await _context.Reservations
+                    .Where(r => r.ReservationStatus == "Blocked" &&
+                               (r.BlockExpiryDate < currentDate || // Hết hạn 2 tuần từ ngày giữ chỗ
+                                (r.FlightScheduleId.HasValue && // Kiểm tra DepartureTime
+                                 _context.FlightSchedules.Any(fs => fs.Id == r.FlightScheduleId && fs.DepartureTime < currentDate.AddDays(14)))))
+                    .ToListAsync();
+
+                if (!expiredReservations.Any())
+                    return Ok(new { message = "No expired reservations found" });
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    foreach (var reservation in expiredReservations)
+                    {
+                        reservation.ReservationStatus = "Cancelled";
+                        reservation.BlockExpiryDate = null; // Làm sạch dữ liệu
+
+                        // Tăng lại số ghế trống trong FlightSchedule
+                        var flightSchedule = await _context.FlightSchedules.FindAsync(reservation.FlightScheduleId);
+                        if (flightSchedule != null)
+                        {
+                            flightSchedule.AvailableSeats += 1;
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    Console.WriteLine($"Cancelled {expiredReservations.Count} expired reservations at {currentDate}");
+                    return Ok(new { message = $"Cancelled {expiredReservations.Count} expired reservations" });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in CancelExpiredReservations: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
         }
     }
 }
