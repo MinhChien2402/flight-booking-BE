@@ -544,24 +544,81 @@ namespace Flight_Booking.Controllers
         [HttpPut("reschedule/{reservationId}")]
         public async Task<IActionResult> RescheduleReservation(int reservationId, [FromBody] RescheduleDTO dto)
         {
-            var reservation = await _context.Reservations.Include(r => r.FlightSchedule).FirstAsync(r => r.Id == reservationId);
-            var newFlightSchedule = await _context.FlightSchedules.FindAsync(dto.NewFlightScheduleId);
-            if (newFlightSchedule == null || newFlightSchedule.AvailableSeats < 1 || !newFlightSchedule.DepartureTime.HasValue)
-                return BadRequest(new { message = "New flight schedule not available" });
-
-            var history = new ReservationHistory
+            try
             {
-                ReservationId = reservationId,
-                ActionType = "Reschedule",
-                OldDate = reservation.FlightSchedule.DepartureTime,
-                NewDate = newFlightSchedule.DepartureTime,
-                RefundAmount = reservation.TotalFare - newFlightSchedule.Price
-            };
-            reservation.FlightScheduleId = dto.NewFlightScheduleId;
-            reservation.TotalFare = newFlightSchedule.Price;
-            _context.ReservationHistories.Add(history);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Reservation rescheduled" });
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var reservation = await _context.Reservations
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                    .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId && r.ReservationStatus == "Confirmed");
+
+                if (reservation == null)
+                    return BadRequest(new { message = "Invalid or non-confirmed reservation" });
+
+                var oldFlightSchedule = reservation.ReservationTickets.FirstOrDefault()?.FlightSchedule;
+                if (oldFlightSchedule == null || !oldFlightSchedule.DepartureTime.HasValue)
+                    return BadRequest(new { message = "Invalid current flight schedule" });
+
+                var newFlightSchedule = await _context.FlightSchedules.FindAsync(dto.NewFlightScheduleId);
+                if (newFlightSchedule == null || newFlightSchedule.AvailableSeats < 1 || !newFlightSchedule.DepartureTime.HasValue)
+                    return BadRequest(new { message = "New flight schedule not available" });
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    // Cập nhật TotalFare
+                    reservation.TotalFare = newFlightSchedule.Price;
+
+                    // Cập nhật ReservationTickets với chuyến bay mới
+                    var reservationTicket = reservation.ReservationTickets.FirstOrDefault();
+                    if (reservationTicket != null)
+                    {
+                        reservationTicket.FlightScheduleId = dto.NewFlightScheduleId;
+                    }
+                    else
+                    {
+                        reservationTicket = new ReservationTicket
+                        {
+                            ReservationId = reservation.Id,
+                            FlightScheduleId = dto.NewFlightScheduleId
+                        };
+                        _context.ReservationTickets.Add(reservationTicket);
+                    }
+
+                    // Tăng ghế chuyến cũ, giảm ghế chuyến mới
+                    oldFlightSchedule.AvailableSeats += 1;
+                    newFlightSchedule.AvailableSeats -= 1;
+
+                    // Tạo lịch sử reschedule
+                    var history = new ReservationHistory
+                    {
+                        ReservationId = reservationId,
+                        ActionType = "Reschedule",
+                        OldDate = oldFlightSchedule.DepartureTime,
+                        NewDate = newFlightSchedule.DepartureTime,
+                        RefundAmount = oldFlightSchedule.Price - newFlightSchedule.Price,
+                        ActionDate = DateTime.Now
+                    };
+                    _context.ReservationHistories.Add(history);
+
+                    // Cập nhật ConfirmationNumber
+                    reservation.ConfirmationNumber = Guid.NewGuid().ToString();
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new
+                    {
+                        message = "Reservation rescheduled successfully",
+                        reservationId = reservation.Id,
+                        newConfirmationNumber = reservation.ConfirmationNumber
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in RescheduleReservation: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
         }
 
         [Authorize]
