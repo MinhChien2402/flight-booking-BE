@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Flight_Booking.Model
 {
@@ -11,6 +12,7 @@ namespace Flight_Booking.Model
 
         public int ReservationId { get; set; } // Thay BookingId thành ReservationId để khớp với Reservation
         [ForeignKey("ReservationId")]
+        [JsonIgnore]
         public Reservation Reservation { get; set; } // Thay Booking thành Reservation
 
         public string Title { get; set; }

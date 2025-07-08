@@ -45,14 +45,21 @@ namespace Flight_Booking.Controllers
                     return BadRequest(new { message = "Reservation request, passenger information, and outbound ticket ID are required" });
                 }
 
+                // Kiểm tra khớp UserId từ request và token
+                if (request.UserId != userId)
+                {
+                    return BadRequest(new { message = "UserId in request does not match authenticated user" });
+                }
+
+                // Xác thực dữ liệu hành khách
                 foreach (var passenger in request.Passengers)
                 {
                     if (string.IsNullOrEmpty(passenger.Title) ||
                         string.IsNullOrEmpty(passenger.FirstName) ||
                         string.IsNullOrEmpty(passenger.LastName) ||
                         string.IsNullOrEmpty(passenger.PassportNumber) ||
-                        passenger.DateOfBirth == default(DateTime) ||
-                        passenger.PassportExpiry == default(DateTime))
+                        !passenger.DateOfBirth.HasValue ||
+                        !passenger.PassportExpiry.HasValue)
                     {
                         return BadRequest(new { message = "All passenger fields are required" });
                     }
@@ -60,21 +67,25 @@ namespace Flight_Booking.Controllers
                     {
                         return BadRequest(new { message = "Date of birth cannot be in the future" });
                     }
+                    if (passenger.PassportExpiry < DateTime.Now)
+                    {
+                        return BadRequest(new { message = "Passport expiry cannot be in the past" });
+                    }
                 }
 
                 var outboundFlightSchedule = await _context.FlightSchedules.FindAsync(request.OutboundTicketId.Value);
-                if (outboundFlightSchedule == null || outboundFlightSchedule.AvailableSeats < 1)
+                if (outboundFlightSchedule == null || outboundFlightSchedule.AvailableSeats < request.Passengers.Count)
                 {
-                    return BadRequest(new { message = "Outbound flight schedule not available" });
+                    return BadRequest(new { message = "Outbound flight schedule not available or insufficient seats" });
                 }
 
                 FlightSchedule returnFlightSchedule = null;
                 if (request.ReturnTicketId.HasValue)
                 {
                     returnFlightSchedule = await _context.FlightSchedules.FindAsync(request.ReturnTicketId.Value);
-                    if (returnFlightSchedule == null || returnFlightSchedule.AvailableSeats < 1)
+                    if (returnFlightSchedule == null || returnFlightSchedule.AvailableSeats < request.Passengers.Count)
                     {
-                        return BadRequest(new { message = "Return flight schedule not available" });
+                        return BadRequest(new { message = "Return flight schedule not available or insufficient seats" });
                     }
                 }
 
@@ -88,11 +99,12 @@ namespace Flight_Booking.Controllers
                 {
                     var reservation = new Reservation
                     {
-                        UserId = userId,
-                        TotalFare = (decimal)request.TotalPrice,
-                        ReservationDate = DateTime.Now,
-                        ReservationStatus = "Confirmed",
-                        ConfirmationNumber = Guid.NewGuid().ToString(),
+                        UserId = userId, // Sử dụng UserId từ token
+                        TotalFare = request.TotalPrice,
+                        ReservationDate = DateTime.UtcNow,
+                        ReservationStatus = request.ReservationStatus?.Trim() == "Confirmed" ? "Confirmed" : "Pending", // Mặc định là Pending nếu không hợp lệ
+                        ConfirmationNumber = string.IsNullOrEmpty(request.ConfirmationNumber) ? Guid.NewGuid().ToString() : request.ConfirmationNumber,
+                        CancellationRules = request.CancellationRules ?? "Default: 90% refund if cancelled > 7 days, 50% if < 7 days",
                         Passengers = request.Passengers.Select(p => new Passenger
                         {
                             Title = p.Title,
@@ -105,7 +117,7 @@ namespace Flight_Booking.Controllers
                     };
 
                     _context.Reservations.Add(reservation);
-                    await _context.SaveChangesAsync();
+                    await _context.SaveChangesAsync(); // Lưu để lấy ReservationId
 
                     var outboundReservationTicket = new ReservationTicket
                     {
@@ -113,7 +125,7 @@ namespace Flight_Booking.Controllers
                         FlightScheduleId = request.OutboundTicketId.Value
                     };
                     _context.ReservationTickets.Add(outboundReservationTicket);
-                    outboundFlightSchedule.AvailableSeats -= 1;
+                    outboundFlightSchedule.AvailableSeats -= request.Passengers.Count;
 
                     if (request.ReturnTicketId.HasValue)
                     {
@@ -123,7 +135,7 @@ namespace Flight_Booking.Controllers
                             FlightScheduleId = request.ReturnTicketId.Value
                         };
                         _context.ReservationTickets.Add(returnReservationTicket);
-                        returnFlightSchedule.AvailableSeats -= 1;
+                        returnFlightSchedule.AvailableSeats -= request.Passengers.Count;
                     }
 
                     await _context.SaveChangesAsync();
@@ -459,7 +471,6 @@ namespace Flight_Booking.Controllers
                     _context.Reservations.Add(reservation);
                     await _context.SaveChangesAsync();
 
-                    // Thêm ReservationTicket
                     var reservationTicket = new ReservationTicket
                     {
                         ReservationId = reservation.Id,
@@ -492,35 +503,29 @@ namespace Flight_Booking.Controllers
         {
             try
             {
-                // Lấy userId từ token
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
 
-                // Tìm reservation với reservationId và userId
                 var reservation = await _context.Reservations
                     .Include(r => r.ReservationTickets)
                         .ThenInclude(rt => rt.FlightSchedule)
                     .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId);
 
-                // Kiểm tra reservation hợp lệ và trạng thái
                 if (reservation == null || reservation.ReservationStatus != "Blocked")
                     return BadRequest(new { message = "Invalid or non-blocked reservation" });
 
-                // Kiểm tra flight schedule
                 var flightSchedule = reservation.ReservationTickets.FirstOrDefault()?.FlightSchedule;
                 if (flightSchedule == null || !flightSchedule.DepartureTime.HasValue)
                     return BadRequest(new { message = "Invalid flight schedule" });
 
-                // Kiểm tra thời hạn xác nhận (trước 2 tuần)
                 var daysDiff = (flightSchedule.DepartureTime.Value - DateTime.Now).TotalDays;
                 if (daysDiff < 14)
                     return BadRequest(new { message = "Cannot confirm: Departure is within 2 weeks" });
 
                 using (var transaction = await _context.Database.BeginTransactionAsync())
                 {
-                    // Cập nhật trạng thái và số xác nhận
                     reservation.ReservationStatus = "Confirmed";
                     reservation.ConfirmationNumber = Guid.NewGuid().ToString();
-                    reservation.BlockExpiryDate = null; // Xóa thời hạn giữ chỗ
+                    reservation.BlockExpiryDate = null;
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
@@ -565,10 +570,8 @@ namespace Flight_Booking.Controllers
 
                 using (var transaction = await _context.Database.BeginTransactionAsync())
                 {
-                    // Cập nhật TotalFare
                     reservation.TotalFare = newFlightSchedule.Price;
 
-                    // Cập nhật ReservationTickets với chuyến bay mới
                     var reservationTicket = reservation.ReservationTickets.FirstOrDefault();
                     if (reservationTicket != null)
                     {
@@ -584,11 +587,9 @@ namespace Flight_Booking.Controllers
                         _context.ReservationTickets.Add(reservationTicket);
                     }
 
-                    // Tăng ghế chuyến cũ, giảm ghế chuyến mới
                     oldFlightSchedule.AvailableSeats += 1;
                     newFlightSchedule.AvailableSeats -= 1;
 
-                    // Tạo lịch sử reschedule
                     var history = new ReservationHistory
                     {
                         ReservationId = reservationId,
@@ -600,7 +601,6 @@ namespace Flight_Booking.Controllers
                     };
                     _context.ReservationHistories.Add(history);
 
-                    // Cập nhật ConfirmationNumber
                     reservation.ConfirmationNumber = Guid.NewGuid().ToString();
 
                     await _context.SaveChangesAsync();
@@ -625,27 +625,42 @@ namespace Flight_Booking.Controllers
         [HttpDelete("cancel/{reservationId}")]
         public async Task<IActionResult> CancelReservation(int reservationId)
         {
-            var reservation = await _context.Reservations.Include(r => r.FlightSchedule).FirstAsync(r => r.Id == reservationId);
-            if (reservation.FlightSchedule == null || !reservation.FlightSchedule.DepartureTime.HasValue)
+            try
             {
-                return BadRequest(new { message = "Invalid flight schedule data" });
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var reservation = await _context.Reservations
+                    .Include(r => r.FlightSchedule)
+                    .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId);
+
+                if (reservation == null || reservation.FlightSchedule == null || !reservation.FlightSchedule.DepartureTime.HasValue)
+                {
+                    return BadRequest(new { message = "Invalid reservation or flight schedule data" });
+                }
+
+                var timeSpan = reservation.FlightSchedule.DepartureTime.Value - DateTime.Now;
+                int daysDiff = (int)timeSpan.TotalDays;
+
+                var refund = daysDiff > 7 ? reservation.TotalFare * 0.9m : daysDiff > 0 ? reservation.TotalFare * 0.5m : 0;
+                var history = new ReservationHistory
+                {
+                    ReservationId = reservationId,
+                    ActionType = "Cancel",
+                    OldDate = reservation.FlightSchedule.DepartureTime,
+                    RefundAmount = refund,
+                    ActionDate = DateTime.Now
+                };
+                reservation.ReservationStatus = "Cancelled";
+
+                _context.ReservationHistories.Add(history);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Reservation cancelled", refund = history.RefundAmount });
             }
-
-            var timeSpan = reservation.FlightSchedule.DepartureTime.Value - DateTime.Now; // Trả về TimeSpan
-            int daysDiff = (int)timeSpan.TotalDays; // Không cần HasValue vì timeSpan là TimeSpan
-
-            var refund = daysDiff > 7 ? reservation.TotalFare * 0.9m : daysDiff > 0 ? reservation.TotalFare * 0.5m : 0;
-            var history = new ReservationHistory
+            catch (Exception ex)
             {
-                ReservationId = reservationId,
-                ActionType = "Cancel",
-                OldDate = reservation.FlightSchedule.DepartureTime,
-                RefundAmount = refund
-            };
-            reservation.ReservationStatus = "Cancelled";
-            _context.ReservationHistories.Add(history);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Reservation cancelled", refund = history.RefundAmount });
+                Console.WriteLine($"Error in CancelReservation: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
         }
 
         [Authorize]
@@ -658,8 +673,8 @@ namespace Flight_Booking.Controllers
 
                 var expiredReservations = await _context.Reservations
                     .Where(r => r.ReservationStatus == "Blocked" &&
-                               (r.BlockExpiryDate < currentDate || // Hết hạn 2 tuần từ ngày giữ chỗ
-                                (r.FlightScheduleId.HasValue && // Kiểm tra DepartureTime
+                               (r.BlockExpiryDate < currentDate ||
+                                (r.FlightScheduleId.HasValue &&
                                  _context.FlightSchedules.Any(fs => fs.Id == r.FlightScheduleId && fs.DepartureTime < currentDate.AddDays(14)))))
                     .ToListAsync();
 
@@ -671,9 +686,8 @@ namespace Flight_Booking.Controllers
                     foreach (var reservation in expiredReservations)
                     {
                         reservation.ReservationStatus = "Cancelled";
-                        reservation.BlockExpiryDate = null; // Làm sạch dữ liệu
+                        reservation.BlockExpiryDate = null;
 
-                        // Tăng lại số ghế trống trong FlightSchedule
                         var flightSchedule = await _context.FlightSchedules.FindAsync(reservation.FlightScheduleId);
                         if (flightSchedule != null)
                         {
