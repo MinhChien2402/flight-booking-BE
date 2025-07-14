@@ -33,6 +33,71 @@ namespace Flight_Booking.Controllers
             _context = context;
         }
 
+        [Authorize] // Hoặc [Authorize(Roles = "Admin")] nếu bạn có role-based auth
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllReservations()
+        {
+            try
+            {
+                // Kiểm tra nếu là admin (nếu chưa có role, bạn có thể thêm logic check từ claim hoặc bỏ qua tạm)
+                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                if (role != "admin")
+                {
+                    return Unauthorized(new { message = "Chỉ admin mới có quyền truy cập" });
+                }
+
+                var reservations = await _context.Reservations
+                    .Include(r => r.User) // Join User để lấy FullName
+                    .Include(r => r.Passengers) // Join Passengers để count số hành khách
+                    .Include(r => r.ReservationTickets) // Join ReservationTickets
+                        .ThenInclude(rt => rt.FlightSchedule) // Join FlightSchedule
+                        .ThenInclude(fs => fs.Airline) // Join Airline
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                        .ThenInclude(fs => fs.DepartureAirport) // Join DepartureAirport
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                        .ThenInclude(fs => fs.ArrivalAirport) // Join ArrivalAirport
+                    .ToListAsync();
+
+                Console.WriteLine($"Total reservations found for admin: {reservations.Count}");
+
+                var result = reservations.Select(r => new
+                {
+                    Id = r.Id,
+                    UserName = r.User?.FullName ?? "N/A", // Tên khách hàng
+                    ReservationDate = r.ReservationDate.ToString("dd/MM/yyyy HH:mm"),
+                    ReservationStatus = r.ReservationStatus,
+                    TotalFare = r.TotalFare,
+                    ConfirmationNumber = r.ConfirmationNumber,
+                    PassengerCount = r.Passengers?.Count ?? 0, // Số hành khách
+                    Flights = r.ReservationTickets
+                        .Where(rt => rt.FlightSchedule != null)
+                        .Select(rt => new
+                        {
+                            Airline = rt.FlightSchedule.Airline?.Name ?? "N/A",
+                            From = rt.FlightSchedule.DepartureAirport?.Name ?? "N/A",
+                            To = rt.FlightSchedule.ArrivalAirport?.Name ?? "N/A",
+                            DepartTime = rt.FlightSchedule.DepartureTime?.ToString("dd/MM/yyyy HH:mm") ?? "N/A",
+                            ArriveTime = rt.FlightSchedule.ArrivalTime?.ToString("dd/MM/yyyy HH:mm") ?? "N/A"
+                        })
+                        .ToList()
+                }).ToList();
+
+                if (!result.Any())
+                {
+                    return NotFound(new { message = "No reservations found" });
+                }
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetAllReservations: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
+        }
+
         [Authorize]
         [HttpPost]
         public async Task<IActionResult> CreateReservation([FromBody] BookingDTO request)
