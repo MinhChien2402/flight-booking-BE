@@ -13,5 +13,6 @@ namespace Flight_Booking.Model
         public DateTime? NewDate { get; set; }
         public decimal? RefundAmount { get; set; }
         public DateTime ActionDate { get; set; }
+        public string CancellationNumber { get; set; }
     }
 }

@@ -622,43 +622,172 @@ namespace Flight_Booking.Controllers
         }
 
         [Authorize]
-        [HttpDelete("cancel/{reservationId}")]
+        [HttpPost("cancel/{reservationId}")]
         public async Task<IActionResult> CancelReservation(int reservationId)
         {
             try
             {
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+
+                // Lấy thông tin đặt chỗ với các liên kết cần thiết
                 var reservation = await _context.Reservations
-                    .Include(r => r.FlightSchedule)
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                    .Include(r => r.Passengers)
                     .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId);
 
-                if (reservation == null || reservation.FlightSchedule == null || !reservation.FlightSchedule.DepartureTime.HasValue)
+                if (reservation == null)
                 {
-                    return BadRequest(new { message = "Invalid reservation or flight schedule data" });
+                    return BadRequest(new { message = "Invalid reservation or you do not have access" });
                 }
 
-                var timeSpan = reservation.FlightSchedule.DepartureTime.Value - DateTime.Now;
-                int daysDiff = (int)timeSpan.TotalDays;
-
-                var refund = daysDiff > 7 ? reservation.TotalFare * 0.9m : daysDiff > 0 ? reservation.TotalFare * 0.5m : 0;
-                var history = new ReservationHistory
+                if (reservation.ReservationStatus != "Blocked" && reservation.ReservationStatus != "Confirmed")
                 {
-                    ReservationId = reservationId,
-                    ActionType = "Cancel",
-                    OldDate = reservation.FlightSchedule.DepartureTime,
-                    RefundAmount = refund,
-                    ActionDate = DateTime.Now
-                };
-                reservation.ReservationStatus = "Cancelled";
+                    return BadRequest(new { message = "Reservation is not in a cancellable state" });
+                }
 
-                _context.ReservationHistories.Add(history);
-                await _context.SaveChangesAsync();
+                var flightSchedules = reservation.ReservationTickets.Select(rt => rt.FlightSchedule).ToList();
+                if (!flightSchedules.Any() || flightSchedules.Any(fs => fs == null || !fs.DepartureTime.HasValue))
+                {
+                    return BadRequest(new { message = "Invalid flight schedule data" });
+                }
 
-                return Ok(new { message = "Reservation cancelled", refund = history.RefundAmount });
+                // Tính toán phần trăm hoàn tiền (nếu là vé Confirmed)
+                decimal refundAmount = 0;
+                if (reservation.ReservationStatus == "Confirmed")
+                {
+                    var earliestDeparture = flightSchedules.Min(fs => fs.DepartureTime.Value);
+                    var daysDiff = (earliestDeparture - DateTime.Now).TotalDays;
+
+                    // Áp dụng quy định hoàn tiền
+                    if (daysDiff > 7)
+                        refundAmount = reservation.TotalFare * 0.9m;
+                    else if (daysDiff > 0)
+                        refundAmount = reservation.TotalFare * 0.5m;
+                    else
+                        refundAmount = 0;
+                }
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    // Cập nhật số ghế trống
+                    foreach (var rt in reservation.ReservationTickets)
+                    {
+                        rt.FlightSchedule.AvailableSeats += reservation.Passengers.Count;
+                    }
+
+                    // Cập nhật trạng thái đặt chỗ
+                    reservation.ReservationStatus = "Cancelled";
+
+                    // Trừ sky miles (nếu là vé Confirmed)
+                    if (reservation.ReservationStatus == "Confirmed")
+                    {
+                        var user = await _context.Users.FindAsync(userId);
+                        if (user != null)
+                        {
+                            var totalDistance = flightSchedules.Sum(fs => fs.Distance ?? 1000);
+                            user.SkyMiles -= (decimal)(totalDistance * 0.1 * reservation.Passengers.Count);
+                            if (user.SkyMiles < 0) user.SkyMiles = 0; // Đảm bảo sky miles không âm
+                        }
+                    }
+
+                    // Tạo lịch sử hủy
+                    var cancellationNumber = Guid.NewGuid().ToString();
+                    var history = new ReservationHistory
+                    {
+                        ReservationId = reservationId,
+                        ActionType = "Cancel",
+                        OldDate = flightSchedules.First().DepartureTime,
+                        RefundAmount = refundAmount,
+                        ActionDate = DateTime.Now,
+                        CancellationNumber = cancellationNumber
+                    };
+                    _context.ReservationHistories.Add(history);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new
+                    {
+                        message = "Reservation cancelled successfully",
+                        refundAmount,
+                        cancellationNumber
+                    });
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                Console.WriteLine($"DbUpdateException: {ex.InnerException?.Message ?? ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.InnerException?.Message ?? ex.Message });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error in CancelReservation: {ex.Message}");
+                return StatusCode(500, new { message = "Server error", error = ex.Message });
+            }
+        }
+
+        [Authorize]
+        [HttpGet("cancel-rules/{reservationId}")]
+        public async Task<IActionResult> GetCancelRules(int reservationId)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var reservation = await _context.Reservations
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                            .ThenInclude(fs => fs.Airline)
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                            .ThenInclude(fs => fs.DepartureAirport)
+                    .Include(r => r.ReservationTickets)
+                        .ThenInclude(rt => rt.FlightSchedule)
+                            .ThenInclude(fs => fs.ArrivalAirport)
+                    .FirstOrDefaultAsync(r => r.Id == reservationId && r.UserId == userId);
+
+                if (reservation == null)
+                {
+                    return BadRequest(new { message = "Invalid reservation or you do not have access" });
+                }
+
+                var flightSchedules = reservation.ReservationTickets.Select(rt => rt.FlightSchedule).ToList();
+                if (!flightSchedules.Any() || flightSchedules.Any(fs => fs == null || !fs.DepartureTime.HasValue))
+                {
+                    return BadRequest(new { message = "Invalid flight schedule data" });
+                }
+
+                var earliestDeparture = flightSchedules.Min(fs => fs.DepartureTime.Value);
+                // Sử dụng múi giờ địa phương (+07) thay vì UTC
+                var localNow = DateTime.Now; // Hoặc TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time"));
+                var daysDiff = (earliestDeparture - localNow).TotalDays;
+                decimal refundPercentage = daysDiff > 7 ? 0.9m : daysDiff > 0 && daysDiff <= 7 ? 0.5m : 0;
+                decimal refundAmount = reservation.TotalFare * refundPercentage;
+
+                var result = new
+                {
+                    reservationId = reservation.Id,
+                    confirmationNumber = reservation.ConfirmationNumber,
+                    status = reservation.ReservationStatus,
+                    cancellationRules = reservation.CancellationRules ?? "Default: 90% refund if cancelled > 7 days, 50% if < 7 days",
+                    refundPercentage = refundPercentage * 100,
+                    refundAmount = refundAmount,
+                    tickets = reservation.ReservationTickets.Select(rt => new
+                    {
+                        airline = rt.FlightSchedule.Airline?.Name ?? "N/A",
+                        from = rt.FlightSchedule.DepartureAirport?.Name ?? "N/A",
+                        to = rt.FlightSchedule.ArrivalAirport?.Name ?? "N/A",
+                        departure = rt.FlightSchedule.DepartureTime?.ToString("dd/MM/yyyy HH:mm") ?? "N/A",
+                        arrival = rt.FlightSchedule.ArrivalTime?.ToString("dd/MM/yyyy HH:mm") ?? "N/A"
+                    }).ToList()
+                };
+
+                Console.WriteLine($"GetCancelRules - ReservationId: {reservationId}, DaysDiff: {daysDiff}, RefundPercentage: {refundPercentage}, RefundAmount: {refundAmount}");
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetCancelRules: {ex.Message}");
                 return StatusCode(500, new { message = "Server error", error = ex.Message });
             }
         }
