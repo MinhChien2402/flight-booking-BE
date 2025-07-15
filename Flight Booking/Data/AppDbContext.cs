@@ -15,7 +15,6 @@ namespace Flight_Booking.Data
         public DbSet<Aircraft> Aircrafts { get; set; }
         public DbSet<AirlineAircraft> AirlinePlanes { get; set; }
         public DbSet<ReservationTicket> ReservationTickets { get; set; }
-        public DbSet<RouteSuggestion> RouteSuggestions { get; set; }
         public DbSet<ReservationHistory> ReservationHistories { get; set; }
 
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
@@ -162,27 +161,7 @@ namespace Flight_Booking.Data
                 .HasForeignKey(rh => rh.ReservationId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<RouteSuggestion>()
-                .ToTable("RouteSuggestions")
-                .HasKey(rs => rs.RouteId);
-            modelBuilder.Entity<RouteSuggestion>()
-                .Property(rs => rs.RouteId).HasColumnName("RouteId");
-            modelBuilder.Entity<RouteSuggestion>()
-                .Property(rs => rs.DepartureAirportId).HasColumnName("departure_airport_id");
-            modelBuilder.Entity<RouteSuggestion>()
-                .Property(rs => rs.ArrivalAirportId).HasColumnName("arrival_airport_id");
-            modelBuilder.Entity<RouteSuggestion>()
-                .Property(rs => rs.TransferPoints).HasColumnName("transfer_points");
-            modelBuilder.Entity<RouteSuggestion>()
-                .HasOne(rs => rs.DepartureAirport)
-                .WithMany()
-                .HasForeignKey(rs => rs.DepartureAirportId)
-                .OnDelete(DeleteBehavior.Restrict);
-            modelBuilder.Entity<RouteSuggestion>()
-                .HasOne(rs => rs.ArrivalAirport)
-                .WithMany()
-                .HasForeignKey(rs => rs.ArrivalAirportId)
-                .OnDelete(DeleteBehavior.Restrict);
+           
 
             // Seeding dữ liệu
             modelBuilder.Entity<User>().HasData(
@@ -209,10 +188,6 @@ namespace Flight_Booking.Data
             modelBuilder.Entity<Country>().HasData(
                 new Country { Id = 1, Name = "Vietnam", Code = "VNM", AdditionalCode = "VIE" },
                 new Country { Id = 2, Name = "Thailand", Code = "THA", AdditionalCode = "THL" }
-            );
-
-            modelBuilder.Entity<RouteSuggestion>().HasData(
-                new RouteSuggestion { RouteId = 1, DepartureAirportId = 1, ArrivalAirportId = 2, TransferPoints = "Hanoi" }
             );
         }
 

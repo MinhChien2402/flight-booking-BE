@@ -160,14 +160,20 @@ namespace Flight_Booking.Controllers
                     return BadRequest(new { message = $"User with ID {userId} not found" });
                 }
 
+                if (request.TotalPrice <= 0)
+                {
+                    return BadRequest(new { message = "Total price must be greater than 0" });
+                }
+
                 using (var transaction = await _context.Database.BeginTransactionAsync())
                 {
                     var reservation = new Reservation
                     {
                         UserId = userId, // Sử dụng UserId từ token
+                        FlightScheduleId = request.OutboundTicketId.Value, // Set outbound làm default để tránh NULL
                         TotalFare = request.TotalPrice,
                         ReservationDate = DateTime.UtcNow,
-                        ReservationStatus = request.ReservationStatus?.Trim() == "Confirmed" ? "Confirmed" : "Pending", // Mặc định là Pending nếu không hợp lệ
+                        ReservationStatus = string.IsNullOrEmpty(request.ReservationStatus) || request.ReservationStatus?.Trim() != "Confirmed" ? "Pending" : "Confirmed", // Mặc định Pending, chỉ Confirmed nếu gửi đúng
                         ConfirmationNumber = string.IsNullOrEmpty(request.ConfirmationNumber) ? Guid.NewGuid().ToString() : request.ConfirmationNumber,
                         CancellationRules = request.CancellationRules ?? "Default: 90% refund if cancelled > 7 days, 50% if < 7 days",
                         Passengers = request.Passengers.Select(p => new Passenger
@@ -203,10 +209,18 @@ namespace Flight_Booking.Controllers
                         returnFlightSchedule.AvailableSeats -= request.Passengers.Count;
                     }
 
+                    // Cập nhật SkyMiles
+                    decimal totalDistance = (decimal)(outboundFlightSchedule.Distance ?? 1000.0); 
+                    if (returnFlightSchedule != null)
+                    {
+                        totalDistance += (decimal)(returnFlightSchedule.Distance ?? 1000.0); 
+                    }
+                    user.SkyMiles += (decimal)(totalDistance * 0.1m * request.Passengers.Count); 
+
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
-                    Console.WriteLine($"Created reservation with ID {reservation.Id} for user {userId}");
+                    Console.WriteLine($"Created reservation with ID {reservation.Id} for user {userId}. Updated SkyMiles: {user.SkyMiles}");
                     return Ok(new { message = "Reservation confirmed successfully", reservationId = reservation.Id });
                 }
             }
