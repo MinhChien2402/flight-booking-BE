@@ -401,16 +401,11 @@ namespace Flight_Booking.Controllers
                     .Include(r => r.ReservationTickets)
                         .ThenInclude(rt => rt.FlightSchedule)
                         .ThenInclude(fs => fs.ArrivalAirport)
+                    .Include(r => r.Passengers) // Thêm để lấy chi tiết hành khách
                     .FirstOrDefaultAsync();
 
                 if (reservation == null)
                     return NotFound(new { message = "Reservation not found or you do not have access" });
-
-                var user = await _context.Users.FindAsync(userId);
-                if (user == null)
-                    return BadRequest(new { message = "User not found for the given token" });
-
-                var passengerName = user.FullName ?? "Unknown";
 
                 using (var memoryStream = new MemoryStream())
                 {
@@ -422,14 +417,24 @@ namespace Flight_Booking.Controllers
                     var font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
                     var boldFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
 
+                    // Header E-Ticket
                     document.Add(new Paragraph("E-Ticket")
                         .SetTextAlignment(TextAlignment.CENTER)
                         .SetFont(boldFont)
                         .SetFontSize(20)
                         .SetMarginBottom(10));
 
-                    foreach (var flightSchedule in reservation.ReservationTickets.Select(rt => rt.FlightSchedule))
+                    // Section chi tiết vé (Tickets)
+                    document.Add(new Paragraph("Ticket Details")
+                        .SetFont(boldFont)
+                        .SetFontSize(16)
+                        .SetMarginBottom(10));
+
+                    foreach (var rt in reservation.ReservationTickets)
                     {
+                        var flightSchedule = rt.FlightSchedule;
+                        if (flightSchedule == null) continue;
+
                         document.Add(new Paragraph($"{flightSchedule.DepartureAirport.Name} to {flightSchedule.ArrivalAirport.Name}")
                             .SetTextAlignment(TextAlignment.CENTER)
                             .SetFont(font)
@@ -441,41 +446,82 @@ namespace Flight_Booking.Controllers
                             .SetFontSize(14)
                             .SetMarginBottom(20));
 
-                        var table = new Table(new float[] { 2f, 2f, 2f }).UseAllAvailableWidth();
-                        table.AddHeaderCell(new Cell().Add(new Paragraph("Flight").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
-                        table.AddHeaderCell(new Cell().Add(new Paragraph("From").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
-                        table.AddHeaderCell(new Cell().Add(new Paragraph("To").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
+                        // Bảng chi tiết vé
+                        var table = new Table(new float[] { 2f, 3f }).UseAllAvailableWidth(); // 2 cột để dễ đọc
+                        table.AddHeaderCell(new Cell().Add(new Paragraph("Information").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
+                        table.AddHeaderCell(new Cell().Add(new Paragraph("Details").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
 
+                        table.AddCell(new Cell().Add(new Paragraph("Airline").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.Airline.Name).SetFont(font)));
+
+                        table.AddCell(new Cell().Add(new Paragraph("From").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.DepartureAirport.Name).SetFont(font)));
+
+                        table.AddCell(new Cell().Add(new Paragraph("To").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.ArrivalAirport.Name).SetFont(font)));
 
-                        table.AddCell(new Cell().Add(new Paragraph("Date").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
+                        table.AddCell(new Cell().Add(new Paragraph("Date").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.DepartureTime.HasValue ? flightSchedule.DepartureTime.Value.ToString("dd/MM/yyyy") : "N/A").SetFont(font)));
-                        table.AddCell(new Cell().Add(new Paragraph(flightSchedule.ArrivalTime.HasValue ? flightSchedule.ArrivalTime.Value.ToString("dd/MM/yyyy") : "N/A").SetFont(font)));
 
-                        table.AddCell(new Cell().Add(new Paragraph("Time").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
+                        table.AddCell(new Cell().Add(new Paragraph("Time").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.DepartureTime.HasValue ? flightSchedule.DepartureTime.Value.ToString("HH:mm") : "N/A").SetFont(font)));
+
+                        table.AddCell(new Cell().Add(new Paragraph("Arrival Time").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.ArrivalTime.HasValue ? flightSchedule.ArrivalTime.Value.ToString("HH:mm") : "N/A").SetFont(font)));
 
-                        table.AddCell(new Cell().Add(new Paragraph("Duration").SetFont(boldFont)).SetBackgroundColor(ColorConstants.LIGHT_GRAY));
+                        table.AddCell(new Cell().Add(new Paragraph("Duration").SetFont(font)));
                         table.AddCell(new Cell().Add(new Paragraph(flightSchedule.ArrivalTime.HasValue && flightSchedule.DepartureTime.HasValue
                             ? (flightSchedule.ArrivalTime.Value - flightSchedule.DepartureTime.Value).TotalHours.ToString("F1") + " hrs"
                             : "N/A").SetFont(font)));
-                        table.AddCell(new Cell());
+
+                        table.AddCell(new Cell().Add(new Paragraph("Flight Class").SetFont(font)));
+                        table.AddCell(new Cell().Add(new Paragraph(flightSchedule.FlightClass ?? "Economy").SetFont(font)));
+
+                        table.AddCell(new Cell().Add(new Paragraph("Price").SetFont(font)));
+                        table.AddCell(new Cell().Add(new Paragraph($"${flightSchedule.Price:F2}").SetFont(font)));
 
                         document.Add(table);
                         document.Add(new Paragraph("\n"));
                     }
 
-                    document.Add(new Paragraph($"\nPassenger: {passengerName}")
-                        .SetFont(font)
-                        .SetFontSize(12));
+                    // Section chi tiết hành khách (Passengers)
+                    document.Add(new Paragraph("Passenger Details")
+                        .SetFont(boldFont)
+                        .SetFontSize(16)
+                        .SetMarginTop(20)
+                        .SetMarginBottom(10));
 
+                    if (reservation.Passengers != null && reservation.Passengers.Any())
+                    {
+                        foreach (var passenger in reservation.Passengers)
+                        {
+                            document.Add(new Paragraph($"{passenger.Title} {passenger.FirstName} {passenger.LastName}")
+                                .SetFont(boldFont)
+                                .SetFontSize(12));
+
+                            document.Add(new Paragraph($"DOB: {passenger.DateOfBirth?.ToString("dd/MM/yyyy") ?? "N/A"}")
+                                .SetFont(font)
+                                .SetFontSize(12));
+
+                            document.Add(new Paragraph($"Passport: {passenger.PassportNumber ?? "N/A"} - Expired: {passenger.PassportExpiry?.ToString("dd/MM/yyyy") ?? "N/A"}")
+                                .SetFont(font)
+                                .SetFontSize(12)
+                                .SetMarginBottom(10));
+                        }
+                    }
+                    else
+                    {
+                        document.Add(new Paragraph("There is no passenger information.")
+                            .SetFont(font)
+                            .SetFontSize(12)
+                            .SetMarginBottom(10));
+                    }
+
+                    // Total Price và Confirmation Number
                     document.Add(new Paragraph($"Total Price: ${reservation.TotalFare:F2}")
                         .SetFont(font)
                         .SetFontSize(12)
-                        .SetMarginBottom(20));
+                        .SetMarginTop(20));
 
                     document.Add(new Paragraph($"Confirmation Number: {reservation.ConfirmationNumber}")
                         .SetFont(boldFont)
